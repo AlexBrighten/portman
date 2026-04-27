@@ -1,0 +1,208 @@
+{
+  "name": "portman",
+  "displayName": "Portman",
+  "description": "Visual port manager for VS Code — detect, kill, and manage local network ports with a single click.",
+  "version": "1.0.0",
+  "publisher": "portman-dev",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Debuggers"
+  ],
+  "keywords": [
+    "port",
+    "kill",
+    "process",
+    "network",
+    "EADDRINUSE"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "portman",
+          "title": "Portman",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "portman": [
+        {
+          "type": "webview",
+          "id": "portman-ports",
+          "name": "Ports"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "portman.refreshPorts",
+        "title": "Portman: Refresh Port List",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "portman.killProcess",
+        "title": "Portman: Kill Process",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "portman.killPort",
+        "title": "Portman: Kill Port..."
+      },
+      {
+        "command": "portman.findFreePort",
+        "title": "Portman: Find Free Port From...",
+        "icon": "$(search)"
+      },
+      {
+        "command": "portman.findFreePortFromHere",
+        "title": "Portman: Find Free Port From Here",
+        "icon": "$(search)"
+      },
+      {
+        "command": "portman.showKillHistory",
+        "title": "Portman: Show Kill History"
+      },
+      {
+        "command": "portman.clearHistory",
+        "title": "Portman: Clear Session History"
+      },
+      {
+        "command": "portman.createProfile",
+        "title": "Portman: Create Port Profile",
+        "icon": "$(add)"
+      },
+      {
+        "command": "portman.activateProfile",
+        "title": "Portman: Activate Port Profile"
+      },
+      {
+        "command": "portman.deactivateProfile",
+        "title": "Portman: Deactivate Port Profile"
+      },
+      {
+        "command": "portman.deleteProfile",
+        "title": "Portman: Delete Port Profile"
+      },
+      {
+        "command": "portman.annotatePort",
+        "title": "Portman: Annotate Port..."
+      },
+      {
+        "command": "portman.copyPortNumber",
+        "title": "Portman: Copy Port Number"
+      },
+      {
+        "command": "portman.showDetail",
+        "title": "Portman: Show Port Details"
+      },
+      {
+        "command": "portman.copyFreePort",
+        "title": "Portman: Copy Free Port"
+      },
+      {
+        "command": "portman.exportToDevcontainer",
+        "title": "Portman: Export Profiles to .devcontainer"
+      },
+      {
+        "command": "portman.importFromDevcontainer",
+        "title": "Portman: Import Profiles from .devcontainer"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "portman.refreshPorts",
+          "when": "view == portman-ports",
+          "group": "navigation@1"
+        },
+        {
+          "command": "portman.createProfile",
+          "when": "view == portman-ports",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Portman",
+      "properties": {
+        "portman.refreshInterval": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 500,
+          "maximum": 60000,
+          "description": "Polling interval in milliseconds for port scanning."
+        },
+        "portman.autoCleanup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prompt to release dev process ports when the workspace closes."
+        },
+        "portman.conflictPrediction": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn before launching tasks that require occupied ports."
+        },
+        "portman.terminalInterception": {
+          "type": "boolean",
+          "default": true,
+          "description": "Detect EADDRINUSE errors in the integrated terminal."
+        },
+        "portman.useTeamConfig": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-import port profiles from .devcontainer/portman.json on workspace open."
+        },
+        "portman.frameworkMappings": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "description": "RegExp pattern to match against the process command string."
+              },
+              "label": {
+                "type": "string",
+                "description": "Human-readable framework label to display."
+              }
+            },
+            "required": ["pattern", "label"]
+          },
+          "description": "Custom CLI pattern to framework label mappings. User mappings take precedence over built-in ones."
+        },
+        "portman.enableTelemetry": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to anonymous local usage metric collection."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build:prod",
+    "build:prod": "node ./scripts/esbuild.mjs --production",
+    "build:dev": "node ./scripts/esbuild.mjs",
+    "watch": "node ./scripts/esbuild.mjs --watch",
+    "compile": "tsc -noEmit",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "tree-kill": "^1.2.2",
+    "get-port-please": "^3.1.2"
+  }
+}
