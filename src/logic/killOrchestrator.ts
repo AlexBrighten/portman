@@ -12,7 +12,7 @@
 
 import * as vscode from 'vscode';
 import * as os from 'os';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import treeKill from 'tree-kill';
 import { KillHistoryEntry } from '../types.js';
 import {
@@ -22,6 +22,7 @@ import {
   COMMAND_TIMEOUT_MS,
 } from '../constants.js';
 import { SessionHistory } from '../state/sessionHistory.js';
+import { MetricsCollector } from '../state/metricsCollector.js';
 
 /** Execute a shell command with timeout */
 function execAsync(cmd: string, timeoutMs: number = COMMAND_TIMEOUT_MS): Promise<string> {
@@ -104,9 +105,15 @@ function killAsync(pid: number, signal?: string): Promise<void> {
 export class KillOrchestrator {
   private sessionHistory: SessionHistory;
   private onRefreshRequested: (() => void) | null = null;
+  private metricsCollector: MetricsCollector | null = null;
 
   constructor(sessionHistory: SessionHistory) {
     this.sessionHistory = sessionHistory;
+  }
+
+  /** Set metrics collector */
+  setMetricsCollector(metrics: MetricsCollector): void {
+    this.metricsCollector = metrics;
   }
 
   /** Register a callback to trigger port list refresh after a kill */
@@ -199,6 +206,8 @@ export class KillOrchestrator {
     // 3. Kill the process
     try {
       await killAsync(pid, 'SIGTERM');
+      
+      this.metricsCollector?.recordKillAttempt(true);
 
       this.sessionHistory.log({
         timestamp: new Date().toISOString(),
@@ -219,6 +228,7 @@ export class KillOrchestrator {
       this.scheduleRefresh();
       return true;
     } catch (err) {
+      this.metricsCollector?.recordKillAttempt(false);
       const errorMessage = (err as Error).message;
 
       this.sessionHistory.log({
@@ -287,6 +297,44 @@ export class KillOrchestrator {
       setTimeout(() => {
         this.onRefreshRequested?.();
       }, POST_KILL_REFRESH_DELAY_MS);
+    }
+  }
+
+  /**
+   * Synchronous bulk kill for the deactivate() path.
+   * Per review: deactivate() has a ~5s time budget and cannot show modals
+   * or await async operations. This method uses execSync to kill processes
+   * immediately during extension shutdown.
+   *
+   * Only kills processes with category === 'dev'. System/IDE processes
+   * are never auto-cleaned.
+   */
+  killBulkSync(entries: Array<{ pid: number; port: number; processName: string }>): void {
+    const platform = os.platform();
+
+    for (const entry of entries) {
+      // Never auto-kill system processes
+      if (isSystemProcess(entry.pid, entry.processName)) {
+        continue;
+      }
+
+      try {
+        if (platform === 'win32') {
+          execSync(`taskkill /F /T /PID ${entry.pid}`, {
+            timeout: 2000,
+            stdio: 'ignore',
+          });
+        } else {
+          execSync(`kill -TERM ${entry.pid}`, {
+            timeout: 2000,
+            stdio: 'ignore',
+          });
+        }
+        console.log(`[Portman] Auto-cleanup: killed PID ${entry.pid} (port ${entry.port})`);
+      } catch {
+        // Best-effort — don't crash during deactivation
+        console.log(`[Portman] Auto-cleanup: failed to kill PID ${entry.pid}`);
+      }
     }
   }
 }

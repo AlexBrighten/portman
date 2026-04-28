@@ -41,7 +41,8 @@ export interface PortEntry {
   firstSeenAt: Date;
   memoryMB: number;
   status: 'healthy' | 'conflict' | 'unknown';
-  category: 'dev' | 'ide' | 'system';
+  category: 'dev' | 'ide' | 'system' | 'service';
+  workspaceFolder: string | null;
 }
 
 /**

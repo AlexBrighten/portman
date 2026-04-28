@@ -2,8 +2,21 @@
   "name": "portman",
   "displayName": "Portman",
   "description": "Visual port manager for VS Code — detect, kill, and manage local network ports with a single click.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "portman-dev",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/portman-dev/portman.git"
+  },
+  "homepage": "https://github.com/portman-dev/portman",
+  "bugs": {
+    "url": "https://github.com/portman-dev/portman/issues"
+  },
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -41,6 +54,24 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "portman.refreshPorts",
+        "key": "ctrl+alt+p r",
+        "mac": "cmd+alt+p r",
+        "when": "view.portman-ports.visible"
+      },
+      {
+        "command": "portman.killPort",
+        "key": "ctrl+alt+p k",
+        "mac": "cmd+alt+p k"
+      },
+      {
+        "command": "portman.findFreePort",
+        "key": "ctrl+alt+p f",
+        "mac": "cmd+alt+p f"
+      }
+    ],
     "commands": [
       {
         "command": "portman.refreshPorts",
@@ -114,6 +145,10 @@
       {
         "command": "portman.importFromDevcontainer",
         "title": "Portman: Import Profiles from .devcontainer"
+      },
+      {
+        "command": "portman.showMetrics",
+        "title": "Portman: Show Metrics"
       }
     ],
     "menus": {

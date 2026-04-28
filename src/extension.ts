@@ -19,6 +19,7 @@ import { GlobalStore } from './state/globalStore.js';
 import { SessionHistory } from './state/sessionHistory.js';
 import { ActivityTracker } from './state/activityTracker.js';
 import { WorkspaceStore } from './state/workspaceStore.js';
+import { MetricsCollector } from './state/metricsCollector.js';
 import { PortWebviewProvider } from './ui/portWebviewProvider.js';
 import { StatusBarController } from './ui/statusBarController.js';
 import { NotificationService } from './ui/notificationService.js';
@@ -27,9 +28,13 @@ import { CommandRegistry } from './commands/commandRegistry.js';
 import { TerminalWatcher } from './data/terminalWatcher.js';
 import { EnvScanner } from './data/envScanner.js';
 import { DockerDetector } from './data/dockerDetector.js';
+import { assignWorkspaceFolders } from './logic/workspaceGrouper.js';
+import { classifyPort } from './logic/portClassifier.js';
 
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 let isScanning = false;
+let killOrchestratorInstance: KillOrchestrator | null = null;
+let sidebarProviderInstance: PortWebviewProvider | null = null;
 
 export function activate(context: vscode.ExtensionContext): void {
   console.log('[Portman] Extension activating...');
@@ -40,11 +45,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionHistory = new SessionHistory();
   const activityTracker = new ActivityTracker();
   const workspaceStore = new WorkspaceStore();
+  const metricsCollector = new MetricsCollector(context);
   context.subscriptions.push({ dispose: () => sessionHistory.dispose() });
+  context.subscriptions.push({ dispose: () => metricsCollector.dispose() });
 
   // ── Business logic ─────────────────────────────────────────────────────
 
   const killOrchestrator = new KillOrchestrator(sessionHistory);
+  killOrchestratorInstance = killOrchestrator;
+  
   const profileManager = new ProfileManager(context);
   const conflictDetector = new ConflictDetector();
   const teamConfigManager = new TeamConfigManager(profileManager);
@@ -59,6 +68,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // ── Presentation ───────────────────────────────────────────────────────
 
   const sidebarProvider = new PortWebviewProvider(activityTracker);
+  sidebarProviderInstance = sidebarProvider;
+  
   const statusBar = new StatusBarController();
   context.subscriptions.push(statusBar);
 
@@ -73,7 +84,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // ── Wire cross-component dependencies ──────────────────────────────────
 
   killOrchestrator.setRefreshCallback(() => refreshPorts());
+  killOrchestrator.setMetricsCollector(metricsCollector);
   conflictDetector.setPortListGetter(() => sidebarProvider.getPortEntries());
+  conflictDetector.setMetricsCollector(metricsCollector);
+  terminalWatcher.setMetricsCollector(metricsCollector);
 
   // Terminal watcher callbacks
   terminalWatcher.setCallbacks(
@@ -84,17 +98,6 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ── Port classification ────────────────────────────────────────────────
 
-  function classifyProcess(processName: string, pid: number): 'dev' | 'ide' | 'system' {
-    if (pid <= SYSTEM_PID_THRESHOLD) { return 'system'; }
-    const normalized = processName.replace(/\.exe$/i, '');
-    for (const sysName of SYSTEM_PROCESS_NAMES) {
-      if (sysName.toLowerCase() === normalized.toLowerCase()) { return 'system'; }
-    }
-    for (const ideName of IDE_PROCESS_NAMES) {
-      if (ideName.toLowerCase() === normalized.toLowerCase()) { return 'ide'; }
-    }
-    return 'dev';
-  }
 
   // ── Free port discovery ────────────────────────────────────────────────
 
@@ -158,8 +161,8 @@ export function activate(context: vscode.ExtensionContext): void {
         const annotation = globalStore.getAnnotation(raw.port, processName);
         const firstSeenAt = activityTracker.getFirstSeen(raw.port) || new Date();
 
-        // Classify: dev, ide, or system
-        let category = classifyProcess(processName, raw.pid);
+        // Classify: dev, ide, system, or service
+        let category = classifyPort(raw.port, processName, raw.pid);
         if (frameworkLabel) { category = 'dev'; }
 
         // Docker enrichment
@@ -191,10 +194,14 @@ export function activate(context: vscode.ExtensionContext): void {
           memoryMB,
           status: 'healthy' as const,
           category,
+          workspaceFolder: null, // Initialized in FR-10 step below
         };
       });
 
-      // Step 6: Reconcile activity tracker
+      // Step 6: Workspace grouping (FR-10)
+      await assignWorkspaceFolders(entries);
+
+      // Step 7: Reconcile activity tracker
       const processNames = new Map(entries.map(e => [e.port, e.processName]));
       activityTracker.reconcile(entries.map(e => e.port), processNames);
 
@@ -276,6 +283,13 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Metrics command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('portman.showMetrics', () => {
+      metricsCollector.showMetrics();
+    })
+  );
+
   // ── Command registry (remaining commands) ──────────────────────────────
 
   const commandRegistry = new CommandRegistry(
@@ -330,6 +344,39 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Multi-root workspace folder removal auto-cleanup (FR-11)
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(async (e) => {
+      const config = vscode.workspace.getConfiguration('portman');
+      if (!config.get<boolean>('autoCleanup', true)) {
+        return;
+      }
+
+      if (e.removed.length > 0 && sidebarProviderInstance && killOrchestratorInstance) {
+        const removedNames = new Set(e.removed.map(f => f.name));
+        const activePorts = sidebarProviderInstance.getPortEntries();
+        const orphanedDevPorts = activePorts.filter(
+          p => p.category === 'dev' && p.workspaceFolder && removedNames.has(p.workspaceFolder)
+        );
+
+        if (orphanedDevPorts.length > 0) {
+          const count = orphanedDevPorts.length;
+          const processList = orphanedDevPorts.map(p => `  • Port ${p.port}: ${p.processName}`).join('\n');
+          const confirm = await vscode.window.showInformationMessage(
+            `Portman: ${count} dev process(es) still running for closed workspace folder(s). Release them?\n\n${processList}`,
+            { modal: true },
+            'Kill All'
+          );
+
+          if (confirm === 'Kill All') {
+            await killOrchestratorInstance.killBulk(orphanedDevPorts);
+            refreshPorts();
+          }
+        }
+      }
+    })
+  );
+
   // ── Initialize Phase 2 components ──────────────────────────────────────
 
   conflictDetector.initialize().catch(err => {
@@ -363,6 +410,19 @@ export function deactivate(): Thenable<void> | undefined {
     clearInterval(pollingTimer);
     pollingTimer = null;
   }
+  
+  // Synchronous auto-cleanup on extension deactivate (FR-11 full close)
+  const config = vscode.workspace.getConfiguration('portman');
+  if (config.get<boolean>('autoCleanup', true)) {
+    if (killOrchestratorInstance && sidebarProviderInstance) {
+      const activePorts = sidebarProviderInstance.getPortEntries();
+      const devPorts = activePorts.filter(p => p.category === 'dev');
+      if (devPorts.length > 0) {
+        killOrchestratorInstance.killBulkSync(devPorts);
+      }
+    }
+  }
+
   console.log('[Portman] Extension deactivated.');
   return undefined;
 }

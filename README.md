@@ -32,6 +32,16 @@ It lives in your VS Code sidebar, automatically detects every port on your machi
 
 ---
 
+## 🚀 What's New in v1.1.0
+
+- **Workspace Grouping:** Ports are now grouped by project folder in multi-root workspaces.
+- **Auto-Cleanup:** Say goodbye to zombie processes. Portman prompts to release dev ports when you close a workspace.
+- **Terminal Interception:** Automatically intercepts `EADDRINUSE` errors in the terminal with a 1-click "Kill & Retry".
+- **Docker & .env Support:** Identifies Docker containers and highlights expected ports from `.env` files.
+- **Team Configs:** Export profiles to `.devcontainer/portman.json` to share configurations across your team.
+
+---
+
 ## ✨ Features
 
 ### 🎴 Card-Style Port Dashboard

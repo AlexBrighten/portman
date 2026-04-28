@@ -8,8 +8,6 @@ tsconfig.json
 **/*.ts
 **/*.map
 *.md
-portman_implementation_review.html
-Portman_SRS_v2.pdf
-Portman_SRS_v2.0.pdf
-Portman_SRS_v2.0.docx
-hi.js
+!README.md
+!CHANGELOG.md
+.git/

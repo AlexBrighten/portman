@@ -30,8 +30,28 @@ export const SYSTEM_PROCESS_NAMES: ReadonlySet<string> = new Set([
   'TextInputHost', 'WidgetService', 'Widgets',
   'LsaIso', 'Memory Compression', 'Registry',
   'jhi_service', 'Intel', 'igfxCUIService',
-  'spoolsv', 'wlms', 'WUDFHost',
+  'wlms', 'WUDFHost',
   'Unknown Process',
+]);
+
+/**
+ * Persistent background services (databases, message brokers) that should NEVER
+ * be considered 'dev' ports, protecting them from auto-cleanup.
+ */
+export const PERSISTENT_SERVICE_NAMES: ReadonlySet<string> = new Set([
+  'postgres', 'postgres.exe', 'mongod', 'mongod.exe',
+  'mysqld', 'mysqld.exe', 'redis-server', 'redis-server.exe',
+  'rabbitmq-server', 'rabbitmq-server.exe', 'memcached', 'memcached.exe',
+  'mariadbd', 'mariadbd.exe'
+]);
+
+/**
+ * Known developer tool processes that strongly indicate a 'dev' port.
+ */
+export const DEV_TOOL_PROCESS_NAMES: ReadonlySet<string> = new Set([
+  'node', 'node.exe', 'python', 'python.exe', 'python3', 'python3.exe',
+  'ruby', 'ruby.exe', 'java', 'java.exe', 'cargo', 'cargo.exe',
+  'go', 'go.exe', 'bun', 'bun.exe', 'deno', 'deno.exe', 'php', 'php.exe'
 ]);
 
 /**

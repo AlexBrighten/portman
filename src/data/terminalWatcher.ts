@@ -15,6 +15,7 @@ import { PortEntry } from '../types.js';
 import { TERMINAL_CONFLICT_PATTERNS, NOTIFICATION_DEDUP_WINDOW_MS } from '../constants.js';
 import { SessionHistory } from '../state/sessionHistory.js';
 import { ActivityTracker } from '../state/activityTracker.js';
+import { MetricsCollector } from '../state/metricsCollector.js';
 
 export class TerminalWatcher {
   private disposables: vscode.Disposable[] = [];
@@ -24,6 +25,12 @@ export class TerminalWatcher {
   private sessionHistory: SessionHistory;
   private activityTracker: ActivityTracker;
   private recentNotifications: Map<number, number> = new Map(); // port → timestamp
+  private metricsCollector: MetricsCollector | null = null;
+
+  /** Set metrics collector */
+  setMetricsCollector(metrics: MetricsCollector): void {
+    this.metricsCollector = metrics;
+  }
 
   constructor(sessionHistory: SessionHistory, activityTracker: ActivityTracker) {
     this.sessionHistory = sessionHistory;
@@ -147,6 +154,10 @@ export class TerminalWatcher {
     // Log activity
     this.activityTracker.conflictDetected(port, processLabel);
 
+    // Telemetry
+    this.metricsCollector?.recordTerminalCrash(true);
+    const crashTimeMs = Date.now();
+
     // Build notification actions
     const actions: string[] = ['Kill & Retry', 'Kill Only', 'Find Alternative'];
 
@@ -160,6 +171,10 @@ export class TerminalWatcher {
     if (action === 'Kill & Retry' || action === 'Kill Only') {
       if (occupying && this.onKillRequest) {
         const killed = await this.onKillRequest(occupying.pid, port, occupying.processName);
+
+        if (killed) {
+          this.metricsCollector?.recordResolutionTime(Date.now() - crashTimeMs);
+        }
 
         if (killed && action === 'Kill & Retry') {
           // Retry: re-send the last terminal command

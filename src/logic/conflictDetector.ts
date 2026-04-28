@@ -14,6 +14,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { PortEntry, ConflictEvent } from '../types.js';
 import { PORT_EXTRACTION_PATTERNS } from '../constants.js';
+import { MetricsCollector } from '../state/metricsCollector.js';
 
 /** Extract port numbers from a package.json script value */
 function extractPortsFromScript(scriptValue: string): number[] {
@@ -36,6 +37,12 @@ export class ConflictDetector {
   private scriptPortMap: Map<string, number[]> = new Map();
   private disposables: vscode.Disposable[] = [];
   private portListGetter: (() => PortEntry[]) | null = null;
+  private metricsCollector: MetricsCollector | null = null;
+
+  /** Set metrics collector */
+  setMetricsCollector(metrics: MetricsCollector): void {
+    this.metricsCollector = metrics;
+  }
 
   /** Register a callback to get the current live port list */
   setPortListGetter(getter: () => PortEntry[]): void {
@@ -127,6 +134,20 @@ export class ConflictDetector {
     for (const requiredPort of taskPorts) {
       const conflict = activePorts.find(p => p.port === requiredPort);
       if (conflict) {
+        this.metricsCollector?.recordConflictPrediction();
+        
+        // Setup a temporary tracker to see if the prediction was accurate
+        // (i.e. did it actually crash within 5 seconds?)
+        const checkAccuracy = setTimeout(() => {
+          // If the conflict still exists, we assume the task failed/hung.
+          // In a fully perfect system we would read task exit codes.
+          const stillConflict = this.portListGetter?.().find(p => p.port === requiredPort);
+          if (stillConflict) {
+            this.metricsCollector?.recordConflictPredictionAccurate();
+          }
+        }, 5000);
+        this.disposables.push({ dispose: () => clearTimeout(checkAccuracy) });
+
         this.showConflictWarning({
           port: requiredPort,
           taskName: task.name,
